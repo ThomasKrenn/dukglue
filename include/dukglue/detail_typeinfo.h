@@ -1,4 +1,7 @@
-#pragma once
+
+#ifndef _DETAIL_TYPEINFO_20240506_H
+#define _DETAIL_TYPEINFO_20240506_H 1
+
 
 #include <typeindex>
 
@@ -61,3 +64,5 @@ namespace dukglue
 		};
 	}
 }
+
+#endif

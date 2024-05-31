@@ -1,73 +1,105 @@
-#pragma once
+
+#ifndef _DETAIL_CONSTRUCTOR_20240506_H
+#define _DETAIL_CONSTRUCTOR_20240506_H 1
 
 #include "detail_stack.h"
 #include "detail_traits.h"
 
 namespace dukglue {
-  namespace detail {
+   namespace detail {
 
-    template<bool managed, typename Cls, typename... Ts>
-    static duk_ret_t call_native_constructor(duk_context* ctx)
-    {
-      if (!duk_is_constructor_call(ctx)) {
-        duk_error(ctx, DUK_RET_TYPE_ERROR, "Constructor must be called with new T().");
-        return DUK_RET_TYPE_ERROR;
+      template<bool managed, typename Cls, typename... Ts>
+      static duk_ret_t call_native_constructor(duk_context* ctx)
+      {
+         if (!duk_is_constructor_call(ctx)) {
+            duk_error(ctx, DUK_RET_TYPE_ERROR, "Constructor must be called with new T().");
+            return DUK_RET_TYPE_ERROR;
+         }
+
+         // construct the new instance
+         auto constructor_args = dukglue::detail::get_stack_values<Ts...>(ctx);
+         Cls* obj = dukglue::detail::apply_constructor<Cls>(std::move(constructor_args));
+
+         duk_push_this(ctx);
+
+         // make the new script object keep the pointer to the new object instance
+         duk_push_pointer(ctx, obj);
+         duk_put_prop_string(ctx, -2, "\xFF" "obj_ptr");
+
+         // register it
+         if (!managed) {
+            dukglue::detail::RefManager::register_native_object(ctx, obj);
+         }
+
+         duk_pop(ctx); // pop this
+
+         return 0;
       }
 
-      // construct the new instance
-      auto constructor_args = dukglue::detail::get_stack_values<Ts...>(ctx);
-      Cls* obj = dukglue::detail::apply_constructor<Cls>(std::move(constructor_args));
+      template<bool managed, typename Cls>
+      static duk_ret_t call_native_constructor_varargs(duk_context* ctx)
+      {
+         if (!duk_is_constructor_call(ctx)) {
+            duk_error(ctx, DUK_RET_TYPE_ERROR, "Constructor must be called with new T().");
+            return DUK_RET_TYPE_ERROR;
+         }
 
-      duk_push_this(ctx);
+         // construct the new instance
+         Cls* obj = new Cls(ctx);
 
-      // make the new script object keep the pointer to the new object instance
-      duk_push_pointer(ctx, obj);
-      duk_put_prop_string(ctx, -2, "\xFF" "obj_ptr");
+         duk_push_this(ctx);
 
-      // register it
-	  if (!managed)
-		dukglue::detail::RefManager::register_native_object(ctx, obj);
+         // make the new script object keep the pointer to the new object instance
+         duk_push_pointer(ctx, obj);
+         duk_put_prop_string(ctx, -2, "\xFF" "obj_ptr");
 
-      duk_pop(ctx); // pop this
+         // register it
+         if (!managed) {
+            dukglue::detail::RefManager::register_native_object(ctx, obj);
+         }
 
-      return 0;
-    }
+         duk_pop(ctx); // pop this
 
-	template <typename Cls>
-	static duk_ret_t managed_finalizer(duk_context* ctx)
-	{
-		duk_get_prop_string(ctx, 0, "\xFF" "obj_ptr");
-		Cls* obj = (Cls*) duk_require_pointer(ctx, -1);
-		duk_pop(ctx);  // pop obj_ptr
+         return 0;
+      }
 
-		if (obj != NULL) {
-			delete obj;
+      template <typename Cls>
+      static duk_ret_t managed_finalizer(duk_context* ctx)
+      {
+         duk_get_prop_string(ctx, 0, "\xFF" "obj_ptr");
+         Cls* obj = (Cls*)duk_require_pointer(ctx, -1);
+         duk_pop(ctx);  // pop obj_ptr
 
-			// for safety, set the pointer to undefined
-			duk_push_undefined(ctx);
-			duk_put_prop_string(ctx, 0, "\xFF" "obj_ptr");
-		}
+         if (obj != nullptr) {
+            delete obj;
 
-		return 0;
-	}
+            // for safety, set the pointer to undefined
+            duk_push_undefined(ctx);
+            duk_put_prop_string(ctx, 0, "\xFF" "obj_ptr");
+         }
 
-	template<typename Cls>
-	static duk_ret_t call_native_deleter(duk_context* ctx)
-	{
-		duk_push_this(ctx);
-		duk_get_prop_string(ctx, -1, "\xFF" "obj_ptr");
+         return 0;
+      }
 
-		if (!duk_is_pointer(ctx, -1)) {
-			duk_error(ctx, DUK_RET_REFERENCE_ERROR, "Object has already been invalidated; cannot delete.");
-			return DUK_RET_REFERENCE_ERROR;
-		}
+      template<typename Cls>
+      static duk_ret_t call_native_deleter(duk_context* ctx)
+      {
+         duk_push_this(ctx);
+         duk_get_prop_string(ctx, -1, "\xFF" "obj_ptr");
 
-		Cls* obj = static_cast<Cls*>(duk_require_pointer(ctx, -1));
-		dukglue_invalidate_object(ctx, obj);
-		delete obj;
+         if (!duk_is_pointer(ctx, -1)) {
+            duk_error(ctx, DUK_RET_REFERENCE_ERROR, "Object has already been invalidated; cannot delete.");
+            return DUK_RET_REFERENCE_ERROR;
+         }
 
-		duk_pop_2(ctx);
-		return 0;
-	}
-  }
+         Cls* obj = static_cast<Cls*>(duk_require_pointer(ctx, -1));
+         dukglue_invalidate_object(ctx, obj);
+         delete obj;
+
+         duk_pop_2(ctx);
+         return 0;
+      }
+   }
 }
+
+#endif

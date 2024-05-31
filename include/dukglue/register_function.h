@@ -1,4 +1,6 @@
-#pragma once
+
+#ifndef _REGISTER_FUNCTION_20240506_H 
+#define _REGISTER_FUNCTION_20240506_H 1
 
 #include "detail_function.h"
 
@@ -9,27 +11,74 @@
 template<typename T, T Value, typename RetType, typename... Ts>
 void dukglue_register_function_compiletime(duk_context* ctx, RetType(*)(Ts...), const char* name)
 {
-	static_assert(std::is_same<T, RetType(Ts...)>::value,
-		"Mismatching function pointer template parameter and function pointer argument types. "
-		"Try: dukglue_register_function<decltype(func), func>(ctx, \"funcName\", func)");
+   static_assert(std::is_same<T, RetType(Ts...)>::value,
+      "Mismatching function pointer template parameter and function pointer argument types. "
+      "Try: dukglue_register_function<decltype(func), func>(ctx, \"funcName\", func)");
 
-	duk_c_function evalFunc = dukglue::detail::FuncInfoHolder<RetType, Ts...>::template FuncActual<Value>::call_native_function;
+   duk_c_function evalFunc = dukglue::detail::FuncInfoHolder<RetType, Ts...>::template FuncActual<Value>::call_native_function;
 
-	duk_push_c_function(ctx, evalFunc, sizeof...(Ts));
-	duk_put_global_string(ctx, name);
+   duk_push_c_function(ctx, evalFunc, sizeof...(Ts));
+   duk_put_global_string(ctx, name);
 }
 
 // Register a function.
 template<typename RetType, typename... Ts>
 void dukglue_register_function(duk_context* ctx, RetType(*funcToCall)(Ts...), const char* name)
 {
-	duk_c_function evalFunc = dukglue::detail::FuncInfoHolder<RetType, Ts...>::FuncRuntime::call_native_function;
+   duk_c_function evalFunc = dukglue::detail::FuncInfoHolder<RetType, Ts...>::FuncRuntime::call_native_function;
 
-	duk_push_c_function(ctx, evalFunc, sizeof...(Ts));
+   duk_push_c_function(ctx, evalFunc, sizeof...(Ts));
 
-  static_assert(sizeof(RetType(*)(Ts...)) == sizeof(void*), "Function pointer and data pointer are different sizes");
-	duk_push_pointer(ctx, reinterpret_cast<void*>(funcToCall));
-	duk_put_prop_string(ctx, -2, "\xFF" "func_ptr");
+   static_assert(sizeof(RetType(*)(Ts...)) == sizeof(void*), "Function pointer and data pointer are different sizes");
+   duk_push_pointer(ctx, reinterpret_cast<void*>(funcToCall));
+   duk_put_prop_string(ctx, -2, "\xFF" "func_ptr");
 
-	duk_put_global_string(ctx, name);
+   duk_put_global_string(ctx, name);
 }
+
+// Register a function with a namespace
+template<typename RetType, typename... Ts>
+void dukglue_register_function_ns(duk_context* ctx, RetType(*funcToCall)(Ts...), const char* ns, const char* name)
+{
+   bool is_new_namespace = (duk_get_global_string(ctx, ns) == 0); // [ object ]
+
+   if (is_new_namespace || !duk_is_object(ctx, -1)) {
+      throw DukException() << ns << " is not an object";
+   }
+
+   duk_c_function evalFunc = dukglue::detail::FuncInfoHolder<RetType, Ts...>::FuncRuntime::call_native_function;
+
+   duk_push_c_function(ctx, evalFunc, sizeof...(Ts));
+
+   static_assert(sizeof(RetType(*)(Ts...)) == sizeof(void*), "Function pointer and data pointer are different sizes");
+   duk_push_pointer(ctx, reinterpret_cast<void*>(funcToCall));
+   duk_put_prop_string(ctx, -2, "\xFF" "func_ptr");
+
+   duk_put_prop_string(ctx, -2, name);
+
+   duk_pop(ctx);
+}
+
+
+// Register a member function on a registered object.
+template<typename RetType, typename... Ts>
+void dukglue_register_member_function(duk_context* ctx, RetType(*funcToCall)(Ts...), const char* ns, const char* functionName)
+{
+   duk_c_function evalFunc = dukglue::detail::FuncInfoHolder<RetType, Ts...>::FuncRuntime::call_native_function;
+
+   duk_get_global_string(ctx, ns); // [ object ]
+   if (!duk_is_object(ctx, -1)) {
+      throw DukException() << ns << " is not an object";
+   }
+
+   duk_push_c_function(ctx, evalFunc, sizeof...(Ts)); // [ object func ]
+
+   static_assert(sizeof(RetType(*)(Ts...)) == sizeof(void*), "Function pointer and data pointer are different sizes");
+   duk_push_pointer(ctx, reinterpret_cast<void*>(funcToCall)); // [ object func void* ]
+   duk_put_prop_string(ctx, -2, "\xFF" "func_ptr"); // [ object func ]
+
+   duk_put_prop_string(ctx, -2, functionName);  // [ object ]
+   duk_pop(ctx);
+}
+
+#endif
